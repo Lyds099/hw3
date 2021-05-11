@@ -359,7 +359,7 @@ int gestureUI_mode(){
         angle = choose_angle;
         angle_set = 1;
     }
-    if(pre_angle!=choose_angle){
+    if(pre_angle!=choose_angle || angle_set){
         display_freq();
         pre_angle = choose_angle;
     }
