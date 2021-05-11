@@ -45,10 +45,10 @@ DigitalOut myled3(LED3);
 DigitalIn mypin(USER_BUTTON);
 
 BufferedSerial pc(USBTX, USBRX);
-void gestureUI(Arguments *in, Reply *out);
-void angleDetection(Arguments *in, Reply *out);
-RPCFunction rpcUI(&gestureUI, "gestureUI");
-RPCFunction rpcDetection(&angleDetection, "angleDetection");
+void gesture(Arguments *in, Reply *out);
+void angleD(Arguments *in, Reply *out);
+RPCFunction rpcUI(&gesture, "gesture");
+RPCFunction rpcDetection(&angleD, "angleD");
 
 EventQueue UIQueue;
 EventQueue detectionQueue;
@@ -373,7 +373,7 @@ int gestureUI_mode(){
   }
 }
 
-void gestureUI(Arguments *in, Reply *out){
+void gesture(Arguments *in, Reply *out){
     UIQueue.call(&gestureUI_mode);
 }
 
@@ -410,6 +410,6 @@ void angleDetection_mode(){
    }
 }
 
-void angleDetection(Arguments *in, Reply *out){
+void angleD(Arguments *in, Reply *out){
     detectionQueue.call(&angleDetection_mode);
 }
