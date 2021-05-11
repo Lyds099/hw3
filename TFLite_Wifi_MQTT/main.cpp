@@ -19,6 +19,8 @@ using namespace std::chrono;
 #include "tensorflow/lite/schema/schema_generated.h"
 #include "tensorflow/lite/version.h"
 
+#include <math.h>       /* atan */
+
 
 WiFiInterface *wifi;
 //InterruptIn btn2(USER_BUTTON);
@@ -53,7 +55,8 @@ Thread detectionThread(osPriorityLow);
 int choose_angle = 30;//30 45 60
 int angle = 0;
 int angle_set = 0;
-int angle_result, angle_reference;
+double angle_result, angle_reference;
+int over_threshold = 0;
 
 void messageArrived(MQTT::MessageData& md) {
     MQTT::Message &message = md.message;
@@ -73,6 +76,7 @@ void publish_message(MQTT::Client<MQTTNetwork, Countdown>* client) {
     char buff[200];
     BSP_ACCELERO_AccGetXYZ(pDataXYZ);
     if(angle_set) sprintf(buff, "threshold angle: %d", angle);
+    else if(over_threshold) sprintf(buff, "The tilt angle is over the selected threshold angle, angle: %f", angle_result);
     message.qos = MQTT::QOS0;
     message.retained = false;
     message.dup = false;
@@ -224,11 +228,24 @@ void display_freq(){
             if(i==0) uLCD.printf("%d",30);
             else if(i==1) uLCD.printf("%d",45);
             else if(i==2) uLCD.printf("%d",60);
-            uLCD.printf("deg");
+            uLCD.printf("angle");
         }
 }
 
+void display_angle(){
+        uLCD.cls();
+        uLCD.text_width(2);
+        uLCD.text_height(2);
+        uLCD.textbackground_color(BLACK);
+        uLCD.color(WHITE);
+        uLCD.locate(3,1);
+        uLCD.printf("Angle");
+        uLCD.locate(5,1);
+        uLCD.printf("%d",(int)angle_result);
+}
+
 void gestureUI_mode(){
+  myled1 = 1;
     // Whether we should clear the buffer next time we fetch data
   bool should_clear_buffer = false;
   bool got_data = false;
@@ -337,9 +354,7 @@ void gestureUI_mode(){
     display_freq();
     if(angle_set==1){
         mqtt_queue.call(&publish_message, &client);
-        angle_set = 2;
-    }else if(angle_set==2){
-        client.yield(100);
+        while(client.yield(500)<0);
         myled1 = 0;
         angle_set = 0;
         break;
@@ -348,15 +363,38 @@ void gestureUI_mode(){
 }
 
 void gestureUI(Arguments *in, Reply *out){
-    myled1 = 1;
+
     UIQueue.call(&gestureUI_mode);
 }
 
 void angleDetection_mode(){
-    int16_t pDataXYZ[3] = {0};
-    BSP_ACCELERO_AccGetXYZ(pDataXYZ);
-
+   myled3 = 1;
+   int16_t pDataXYZ[3] = {0};
+   myled1 = 1;
+   myled2 = 1;
+   ThisThread::sleep_for(2000ms);
+   BSP_ACCELERO_AccGetXYZ(pDataXYZ);
+   angle_reference = atan ((double)pDataXYZ[0]/(double)pDataXYZ[2]) * 180.0 / 3.141592653589793238462;
+   myled1 = 0;
+   myled2 = 0;
+   while(true){
+        BSP_ACCELERO_AccGetXYZ(pDataXYZ);
+        angle_result = atan ((double)pDataXYZ[0]/(double)pDataXYZ[2]) * 180.0 / 3.141592653589793238462;
+        angle_result = angle_result - angle_reference;
+        if(angle_result>angle){
+            over_threshold = 1;
+            mqtt_queue.call(&publish_message, &client);
+            over_threshold = 0;
+        }
+        if(client.yield(1000)>=0){
+            myled3 = 0;
+            break;
+        }
+        display_angle();
+        ThisThread::sleep_for(500ms);
+   }
 }
+
 void angleDetection(Arguments *in, Reply *out){
     detectionQueue.call(&angleDetection_mode);
 }
