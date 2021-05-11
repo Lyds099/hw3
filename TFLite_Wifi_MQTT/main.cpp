@@ -7,6 +7,9 @@
 #include "mbed_events.h"
 using namespace std::chrono;
 
+#include "uLCD_4DGL.h"
+uLCD_4DGL uLCD(D1, D0, D2);
+
 #include "accelerometer_handler.h"
 #include "config.h"
 #include "magic_wand_model_data.h"
@@ -18,6 +21,8 @@ using namespace std::chrono;
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 #include "tensorflow/lite/version.h"
+constexpr int kTensorArenaSize = 60 * 1024;
+uint8_t tensor_arena[kTensorArenaSize];
 
 #include <math.h>       /* atan */
 
@@ -34,11 +39,9 @@ const char* topic = "Mbed";
 Thread mqtt_thread(osPriorityHigh);
 EventQueue mqtt_queue;
 
-MQTT::Client<MQTTNetwork, Countdown> client;
-
-RpcDigitalOut myled1(LED1,"myled1");
-RpcDigitalOut myled2(LED2,"myled2");
-RpcDigitalOut myled3(LED3,"myled3");
+DigitalOut myled1(LED1);
+DigitalOut myled2(LED2);
+DigitalOut myled3(LED3);
 DigitalIn mypin(USER_BUTTON);
 
 BufferedSerial pc(USBTX, USBRX);
@@ -52,6 +55,7 @@ EventQueue detectionQueue;
 Thread UIThread(osPriorityLow);
 Thread detectionThread(osPriorityLow);
 
+int pre_angle = 0;
 int choose_angle = 30;//30 45 60
 int angle = 0;
 int angle_set = 0;
@@ -156,8 +160,7 @@ int main() {
 
     NetworkInterface* net = wifi;
     MQTTNetwork mqttNetwork(net);
-    //MQTT::Client<MQTTNetwork, Countdown> client(mqttNetwork);
-    client = MQTT::Client<MQTTNetwork, Countdown>(mqttNetwork);
+    MQTT::Client<MQTTNetwork, Countdown> client(mqttNetwork);
 
     //TODO: revise host to your IP
     const char* host = "172.20.10.3";
@@ -244,7 +247,12 @@ void display_angle(){
         uLCD.printf("%d",(int)angle_result);
 }
 
-void gestureUI_mode(){
+int gestureUI_mode(){
+
+    NetworkInterface* net = wifi;
+    MQTTNetwork mqttNetwork(net);
+    MQTT::Client<MQTTNetwork, Countdown> client(mqttNetwork);
+
   myled1 = 1;
     // Whether we should clear the buffer next time we fetch data
   bool should_clear_buffer = false;
@@ -351,7 +359,10 @@ void gestureUI_mode(){
         angle = choose_angle;
         angle_set = 1;
     }
-    display_freq();
+    if(pre_angle!=choose_angle){
+        display_freq();
+        pre_angle = choose_angle;
+    }
     if(angle_set==1){
         mqtt_queue.call(&publish_message, &client);
         while(client.yield(500)<0);
@@ -363,11 +374,15 @@ void gestureUI_mode(){
 }
 
 void gestureUI(Arguments *in, Reply *out){
-
     UIQueue.call(&gestureUI_mode);
 }
 
 void angleDetection_mode(){
+
+    NetworkInterface* net = wifi;
+    MQTTNetwork mqttNetwork(net);
+    MQTT::Client<MQTTNetwork, Countdown> client(mqttNetwork);
+
    myled3 = 1;
    int16_t pDataXYZ[3] = {0};
    myled1 = 1;
