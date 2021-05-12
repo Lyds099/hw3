@@ -60,6 +60,7 @@ int angle = 0;
 int angle_set = 0;
 double angle_result, angle_reference;
 int over_threshold = 0;
+int over_count = 0;
 
 void messageArrived(MQTT::MessageData& md) {
     MQTT::Message &message = md.message;
@@ -382,6 +383,8 @@ void angleDetection_mode(){
    angle_reference = atan ((double)pDataXYZ[0]/(double)pDataXYZ[2]) * 180.0 / 3.141592653589793238462;
    myled1 = 0;
    myled2 = 0;
+
+   over_count = 0;
    while(true){
         BSP_ACCELERO_AccGetXYZ(pDataXYZ);
         angle_result = atan ((double)pDataXYZ[0]/(double)pDataXYZ[2]) * 180.0 / 3.141592653589793238462;
@@ -391,8 +394,10 @@ void angleDetection_mode(){
             over_threshold = 1;
             mqtt_queue.call(&publish_message, global_client);
             over_threshold = 0;
+            over_count += 1;
         }
-        if(global_client->yield(1000)>=0){
+        if(over_count>=10){
+            global_client->yield(500);
             myled3 = 0;
             //break;
             detectionThread.terminate();
