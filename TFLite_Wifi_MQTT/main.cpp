@@ -26,6 +26,7 @@ uint8_t tensor_arena[kTensorArenaSize];
 
 #include <math.h>       /* atan */
 
+MQTT::Client<MQTTNetwork, Countdown> *global_client;
 
 WiFiInterface *wifi;
 //InterruptIn btn2(USER_BUTTON);
@@ -50,8 +51,6 @@ void angleD(Arguments *in, Reply *out);
 RPCFunction rpcUI(&gesture, "gesture");
 RPCFunction rpcDetection(&angleD, "angleD");
 
-EventQueue UIQueue;
-EventQueue detectionQueue;
 Thread UIThread(osPriorityLow);
 Thread detectionThread(osPriorityLow);
 
@@ -137,9 +136,6 @@ int PredictGesture(float* output) {
 }
 
 int main() {
-    
-    UIThread.start(callback(&UIQueue, &EventQueue::dispatch_forever));
-    detectionThread.start(callback(&detectionQueue, &EventQueue::dispatch_forever));
 
     BSP_ACCELERO_Init();
 
@@ -161,6 +157,7 @@ int main() {
     NetworkInterface* net = wifi;
     MQTTNetwork mqttNetwork(net);
     MQTT::Client<MQTTNetwork, Countdown> client(mqttNetwork);
+    global_client = &client;
 
     //TODO: revise host to your IP
     const char* host = "172.20.10.3";
@@ -243,15 +240,11 @@ void display_angle(){
         uLCD.color(WHITE);
         uLCD.locate(3,1);
         uLCD.printf("Angle");
-        uLCD.locate(5,1);
+        uLCD.locate(3,3);
         uLCD.printf("%d",(int)angle_result);
 }
 
 int gestureUI_mode(){
-
-    NetworkInterface* net = wifi;
-    MQTTNetwork mqttNetwork(net);
-    MQTT::Client<MQTTNetwork, Countdown> client(mqttNetwork);
 
   myled1 = 1;
     // Whether we should clear the buffer next time we fetch data
@@ -364,24 +357,21 @@ int gestureUI_mode(){
         pre_angle = choose_angle;
     }
     if(angle_set==1){
-        mqtt_queue.call(&publish_message, &client);
-        while(client.yield(500)<0);
+        mqtt_queue.call(&publish_message, global_client);
+        global_client->yield(500);
         myled1 = 0;
         angle_set = 0;
-        break;
+        //break;
+        UIThread.terminate();
     }
   }
 }
 
 void gesture(Arguments *in, Reply *out){
-    UIQueue.call(&gestureUI_mode);
+    UIThread.start(&gestureUI_mode);
 }
 
 void angleDetection_mode(){
-
-    NetworkInterface* net = wifi;
-    MQTTNetwork mqttNetwork(net);
-    MQTT::Client<MQTTNetwork, Countdown> client(mqttNetwork);
 
    myled3 = 1;
    int16_t pDataXYZ[3] = {0};
@@ -395,15 +385,17 @@ void angleDetection_mode(){
    while(true){
         BSP_ACCELERO_AccGetXYZ(pDataXYZ);
         angle_result = atan ((double)pDataXYZ[0]/(double)pDataXYZ[2]) * 180.0 / 3.141592653589793238462;
-        angle_result = angle_result - angle_reference;
-        if(angle_result>angle){
+        if(angle_reference>0) angle_result = angle_result - angle_reference;
+        else angle_result = angle_result + abs(angle_reference);
+        if(angle_result > (double)angle){
             over_threshold = 1;
-            mqtt_queue.call(&publish_message, &client);
+            mqtt_queue.call(&publish_message, global_client);
             over_threshold = 0;
         }
-        if(client.yield(1000)>=0){
+        if(global_client->yield(1000)>=0){
             myled3 = 0;
-            break;
+            //break;
+            detectionThread.terminate();
         }
         display_angle();
         ThisThread::sleep_for(500ms);
@@ -411,5 +403,5 @@ void angleDetection_mode(){
 }
 
 void angleD(Arguments *in, Reply *out){
-    detectionQueue.call(&angleDetection_mode);
+    detectionThread.start(&angleDetection_mode);
 }
